@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        splunk_lightblue_inconsistency_diff_viewer
 // @description Splunk lightblue inconsistency diff viewer. It is using jsdifflib library (https://github.com/cemerick/jsdifflib).
-// @version     0.2
+// @version     0.3
 // @namespace   _splunk_lightblue
 // @include     https://splunk.corp.redhat.com/*
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js
@@ -77,25 +77,47 @@ function main() {
         for(i=0; i<json.length; i++) {
             json[i].sort( predicateBy("oid") );
             for(j=0; j<json[i].length; j++) {
-                json[i][j].content.sort( predicateBy("oid") );
-                
+                if (json[i][j].attributes != null) {
+                    json[i][j].attributes.sort( predicateBy("code") );
+                }
+                if (json[i][j].content != null) {
+                    json[i][j].content.sort( predicateBy("oid") );
+                    for(k=0; k<json[i][j].content.length; k++) {
+                        if (json[i][j].content[k].attribute != null) {
+                            json[i][j].content[k].attribute.sort( predicateBy("code") );
+                        }
+                    }
+                }
             }
         }
         return json;
     }
 
     function sortEngineeringProduct1Dim(json) {
-        json.sort( predicateBy("oid") );
-        for(i=0; i<json.length; i++) {
-            json[i].content.sort( predicateBy("oid") );
+        if (json != null) {
+            json.sort( predicateBy("oid") );
+            for(i=0; i<json.length; i++) {
+                if (json[i].attributes != null) {
+                    json[i].attributes.sort( predicateBy("code") );
+                }
+                if (json[i].content != null) {
+                    json[i].content.sort( predicateBy("oid") );
+                    for(j=0; j<json[i].content.length; j++) {
+                        if (json[i].content[j].attribute != null) {
+                            json[i].content[j].attribute.sort( predicateBy("code") );
+                        }
+                    }
+                }
+            }
         }
         return json;
     }
 
     function sortOperationalProduct1Dim(json) {
-        json.sort( predicateBy("sku") );
         for(i=0; i<json.length; i++) {
-            json[i].attributes.sort( predicateBy("code") );
+            if (json[i].attributes != null) {
+                json[i].attributes.sort( predicateBy("code") );
+            }
         }
         return json;
     }
@@ -138,11 +160,13 @@ function main() {
         
         createDiff(json1, json2);
         var w = $(window).width();
+        var h = $(window).height();
         
         $("#gmOverlayDialog").dialog ( {
             modal:      true,
             title:      "Inconsistency Diff",
-            minWidth:   w,
+            width:      1200,
+            height:     700,
             zIndex:     83666   //-- This number doesn't need to get any higher.
         });
         
