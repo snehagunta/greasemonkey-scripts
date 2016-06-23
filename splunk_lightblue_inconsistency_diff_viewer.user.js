@@ -49,16 +49,6 @@ GM_addStyle (".li {display:inline}");
 
 function main() {
 
-    // holds the json of the selected log message for diffing
-    var legacyJson, lightblueJson;
-
-    // lookup map. It's currenly not used since window[map[methodName]] is not working with GM
-    var map = {
-        'getEngineeringProductsForSkus': 'sortEngineeringProduct2Dim',
-        'getEngineeringProductsByOID': 'sortEngineeringProduct1Dim',
-        'getProducts': 'sortOperationalProduct1Dim',
-    }
-
     // register events
     $("#applyViewTypeChange").click(function () {
         createDiff();
@@ -90,9 +80,43 @@ function main() {
         $("#gmOverlayDialog").dialog("open");
     }
 
-    function parseLog(log) {
-        console.log("1");
+    function initDiffWidget() {
+        $("#gmOverlayDialog").dialog ( {
+            modal:      true,
+            autoOpen:   false,
+            title:      "Inconsistency Diff",
+            width:      1200,
+            height:     700,
+            zIndex:     83666,   //-- This number doesn't need to get any higher.
+            open: function () {
+                $(this).scrollTop(0);
+            }
+        });
+    }
 
+    function draw_buttons () {
+        var items = $('tr.shared-eventsviewer-list-body-row');
+        items.each(function (index, el_tmp) {
+
+            if ($(el_tmp).find('td._time button').length === 0) {
+                var log = $(el_tmp).find('td._time').parentsUntil('tbody').last().find('div.raw-event').text();
+
+                if(log.indexOf('Inconsistency found in')>0) {
+                    var el = $(el_tmp).find('td._time'),
+                        container,
+                        format_button = $('<button>');
+                    format_button.text('Inconsistency Diff');
+                    format_button.on('click', function() {
+                        parseLog(log);
+                    });
+                    el.append(format_button);
+                }
+
+            }
+        });
+    }
+
+    function parseLog(log) {
         i1 = log.indexOf('Inconsistency found in ')+23;
         i2 = log.indexOf('(',i1);
         i3 = log.indexOf(':',i2);
@@ -115,68 +139,18 @@ function main() {
         }
     }
 
-    function draw_buttons () {
-        var items = $('tr.shared-eventsviewer-list-body-row');
-        items.each(function (index, el_tmp) {
-
-            if ($(el_tmp).find('td._time button').length === 0) {
-                var log = $(el_tmp).find('td._time').parentsUntil('tbody').last().find('div.raw-event').text();
-
-                if(log.indexOf('Inconsistency found in')>0) {
-                    var el = $(el_tmp).find('td._time'),
-                        container,
-                        format_button = $('<button>');
-                    format_button.text('Inconsistency Diff');
-                    format_button.addClass('json-splunk splIconicButton splButton-tertiary');
-                    format_button.on('click', function() {
-                        parseLog(log);
-                    });
-                    el.append(format_button);
-                }
-
-            }
-        });
-    }
-
-    function initDiffWidget() {
-        $("#gmOverlayDialog").dialog ( {
-            modal:      true,
-            autoOpen:   false,
-            title:      "Inconsistency Diff",
-            width:      1200,
-            height:     700,
-            zIndex:     83666,   //-- This number doesn't need to get any higher.
-            open: function () {
-                $(this).scrollTop(0);
-            }
-        });
-    }
-
-    // Try to draw the buttons every 1000ms.  Previously, this was done by
-    // creating a Splunk.Module.EventsViewer.prototype.onResultsRendered
-    // function, but Splunk.Module is no longer defined in Splunk 6.1.4,
-    // even though docs imply that it should be.  Not sure why the previous
-    // approach no longer works, but this hacky interval will do until I
-    // can figure out how to wire up the event again.
-    setInterval(function() {
-        initDiffWidget();
-        draw_buttons();
-    }.bind(this), 1000);
-
-    /* -------------------------- sort functions -------------------------------------*/
-
-    function predicateBy(prop){
-        return function(a,b){
-            if( a[prop] > b[prop]){
-                return 1;
-            } else if( a[prop] < b[prop] ){
-                return -1;
-            }
-            return 0;
+    function sortJson(jsonString, method) {
+        var json = JSON.parse(jsonString);
+        switch (method) {
+            case 'getEngineeringProductsForSkus': return sortEngineeringProduct2Dim(json);
+            case 'getEngineeringProductsByOID': sortEngineeringProduct1Dim(json);
+            case 'getProducts': return sortOperationalProduct1Dim(json);
+            case 'SubscriptionServiceFacade.getSubscriptionsDetails': return sortGetSubscriptionsDetails(json);
+            case 'SubscriptionServiceFacade.getSubscriptionsPaging': return sortGetSubscriptionsPaging(json);
+            case 'SubscriptionServiceFacade.getNestedSubscriptionsDetails': return sortNestedSubscriptionsDetails(json);
         }
+        return json;
     }
-
-    // TODO: can be optimized since there is a lot of shared logic
 
     function sortEngineeringProduct2Dim(json) {
         for(i=0; i<json.length; i++) {
@@ -227,15 +201,81 @@ function main() {
         return json;
     }
 
-    function sortJson(jsonString, method) {
-        var json = JSON.parse(jsonString);
-        switch (method) {
-            case 'getEngineeringProductsForSkus': return sortEngineeringProduct2Dim(json);
-            case 'getEngineeringProductsByOID': sortEngineeringProduct1Dim(json);
-            case 'getProducts': return sortOperationalProduct1Dim(json);
+    function sortGetSubscriptionsDetails(json) {
+        if (json != null) {
+            json.sort(sortByKey("sku"));
+            for(i=0; i<json.length; i++) {
+                json[i].entries.sort(predicateBy("key"));
+            }
         }
         return json;
     }
+
+    function sortGetSubscriptionsPaging(json) {
+        if (json != null) {
+            json.sort(predicateBy("id"));
+        }
+        return json;
+    }
+
+    function predicateBy(prop){
+        return function(a,b){
+            if( a[prop] > b[prop]){
+              return 1;
+            } else if( a[prop] < b[prop] ){
+              return -1;
+            }
+            return 0;
+        }
+    }
+
+
+    function sortNestedSubscriptionsDetails(json) {
+       json.sort(sortByKey("id"));
+       for(j=0; j<json.length; j++) {
+           json[j].nested.sort(sortByKey("sku"));
+           for(k=0; k<json[j].nested.length; k++) {
+               json[j].nested[k].entries.sort(predicateBy("key"));
+           }
+       }
+       return json;
+
+    }
+
+    function sortByKey(key) {
+        return function(a, b) {
+            var val1 = "";
+            for(i=0; i<a.entries.length; i++) {
+                if (a.entries[i].key==key) {
+                    val1=a.entries[i].value;
+                    break;
+                }
+            }
+
+            var val2 = "";
+            for(i=0; i<b.entries.length; i++) {
+                if (b.entries[i].key==key) {
+                    val2=b.entries[i].value;
+                    break;
+                }
+            }
+            return val1 < val2;
+        }
+    }
+
+
+    // Try to draw the buttons every 1000ms.  Previously, this was done by
+    // creating a Splunk.Module.EventsViewer.prototype.onResultsRendered
+    // function, but Splunk.Module is no longer defined in Splunk 6.1.4,
+    // even though docs imply that it should be.  Not sure why the previous
+    // approach no longer works, but this hacky interval will do until I
+    // can figure out how to wire up the event again.
+    setInterval(function() {
+        initDiffWidget();
+        draw_buttons();
+    }.bind(this), 3000);
+
+
 }
 
 main();
